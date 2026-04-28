@@ -1,139 +1,107 @@
-const dataStore = require('../models');
+const prisma = require('../lib/prisma');
 
-// GET all comments
-const getAllComments = (req, res) => {
-  res.status(200).json(dataStore.comments);
+const getAllComments = async (req, res) => {
+  try {
+    const comments = await prisma.comment.findMany({
+      include: { user: { select: { username: true } } },
+    });
+    res.status(200).json(comments.map((c) => ({ ...c, username: c.user.username })));
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
 };
 
-// GET comment by ID
-const getCommentById = (req, res) => {
-  const commentId = parseInt(req.params.id);
-  const comment = dataStore.comments.find(c => c.id === commentId);
-  if (!comment) {
-    return res.status(404).json({ error: 'Comment not found' });
+const getCommentById = async (req, res) => {
+  try {
+    const comment = await prisma.comment.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: { user: { select: { username: true } } },
+    });
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    res.status(200).json({ ...comment, username: comment.user.username });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
-  res.status(200).json(comment);
 };
 
-// POST create a new comment
-const createComment = (req, res) => {
-  const { text, videoId, userId } = req.body;
-  if (!text || !videoId || !userId) {
-    return res.status(400).json({ error: 'Required fields missing' });
+const createComment = async (req, res) => {
+  try {
+    const { videoId, userId, text } = req.body;
+    if (!videoId || !userId || !text) {
+      return res.status(400).json({ error: 'videoId, userId and text are required' });
+    }
+    const comment = await prisma.comment.create({
+      data: {
+        text,
+        userId: parseInt(userId),
+        videoId: parseInt(videoId),
+      },
+      include: { user: { select: { username: true } } },
+    });
+    res.status(201).json({ ...comment, username: comment.user.username });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
-
-  const videoExists = dataStore.videos.some(v => v.id === parseInt(videoId));
-  const userExists = dataStore.users.some(u => u.id === parseInt(userId));
-  if (!videoExists) return res.status(400).json({ error: 'Video does not exist' });
-  if (!userExists) return res.status(400).json({ error: 'User does not exist' });
-
-  const newComment = {
-    id: dataStore.nextIds.comments++,
-    text,
-    videoId: parseInt(videoId),
-    userId: parseInt(userId),
-    likes: [],
-    createdAt: new Date().toISOString()
-  };
-
-  dataStore.comments.push(newComment);
-  res.status(201).json(newComment);
 };
 
-// PUT update a comment
-const updateComment = (req, res) => {
-  const commentId = parseInt(req.params.id);
-  const commentIndex = dataStore.comments.findIndex(c => c.id === commentId);
-  if (commentIndex === -1) {
-    return res.status(404).json({ error: 'Comment not found' });
+const updateComment = async (req, res) => {
+  try {
+    const comment = await prisma.comment.update({
+      where: { id: parseInt(req.params.id) },
+      data: { text: req.body.text },
+    });
+    res.status(200).json(comment);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
-
-  const { text } = req.body;
-  const comment = dataStore.comments[commentIndex];
-  if (text) comment.text = text;
-  comment.updatedAt = new Date().toISOString();
-
-  res.status(200).json(comment);
 };
 
-// DELETE a comment
-const deleteComment = (req, res) => {
-  const commentId = parseInt(req.params.id);
-  const commentIndex = dataStore.comments.findIndex(c => c.id === commentId);
-  if (commentIndex === -1) {
-    return res.status(404).json({ error: 'Comment not found' });
+const deleteComment = async (req, res) => {
+  try {
+    await prisma.comment.delete({ where: { id: parseInt(req.params.id) } });
+    res.status(204).end();
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
-
-  dataStore.comments.splice(commentIndex, 1);
-  res.status(204).end();
 };
 
-// GET comment likes
-const getCommentLikes = (req, res) => {
-  const commentId = parseInt(req.params.id);
-  const comment = dataStore.comments.find(c => c.id === commentId);
-  if (!comment) {
-    return res.status(404).json({ error: 'Comment not found' });
+const likeComment = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    await prisma.commentLike.create({
+      data: {
+        userId: parseInt(userId),
+        commentId: parseInt(req.params.id),
+      },
+    });
+    res.status(201).json({ message: 'Comment liked successfully' });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Already liked this comment' });
+    }
+    res.status(500).json({ error: 'Server error' });
   }
-
-  const likedUsers = comment.likes.map(userId => {
-    return dataStore.users.find(u => u.id === userId);
-  }).filter(Boolean);
-
-  res.status(200).json(likedUsers);
 };
 
-// POST like a comment
-const likeComment = (req, res) => {
-  const commentId = parseInt(req.params.id);
-  const { userId } = req.body;
-  if (!userId) {
-    return res.status(400).json({ error: 'userId is required' });
+const unlikeComment = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    await prisma.commentLike.delete({
+      where: {
+        userId_commentId: {
+          userId: parseInt(userId),
+          commentId: parseInt(req.params.id),
+        },
+      },
+    });
+    res.status(204).end();
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
-
-  const userIdInt = parseInt(userId);
-  const comment = dataStore.comments.find(c => c.id === commentId);
-  const user = dataStore.users.find(u => u.id === userIdInt);
-
-  if (!comment) return res.status(404).json({ error: 'Comment not found' });
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  if (comment.likes.includes(userIdInt)) {
-    return res.status(409).json({ error: 'User already liked this comment' });
-  }
-
-  comment.likes.push(userIdInt);
-  res.status(201).json({ message: 'Comment liked successfully' });
-};
-
-// DELETE unlike a comment
-const unlikeComment = (req, res) => {
-  const commentId = parseInt(req.params.id);
-  const { userId } = req.body;
-  if (!userId) {
-    return res.status(400).json({ error: 'userId is required' });
-  }
-
-  const userIdInt = parseInt(userId);
-  const comment = dataStore.comments.find(c => c.id === commentId);
-  if (!comment) return res.status(404).json({ error: 'Comment not found' });
-
-  const likeIndex = comment.likes.indexOf(userIdInt);
-  if (likeIndex === -1) {
-    return res.status(404).json({ error: 'Like not found' });
-  }
-
-  comment.likes.splice(likeIndex, 1);
-  res.status(204).end();
 };
 
 module.exports = {
-  getAllComments,
-  getCommentById,
-  createComment,
-  updateComment,
-  deleteComment,
-  getCommentLikes,
-  likeComment,
-  unlikeComment
+  getAllComments, getCommentById, createComment,
+  updateComment, deleteComment, likeComment, unlikeComment,
 };

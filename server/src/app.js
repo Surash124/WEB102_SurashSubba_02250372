@@ -2,44 +2,39 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const bodyParser = require('body-parser');
+const path = require('path');
 
-// Import routes
+const authRoutes = require('./routes/auth');
 const videoRoutes = require('./routes/videos');
 const userRoutes = require('./routes/users');
 const commentRoutes = require('./routes/comments');
 
-// Initialize Express app
 const app = express();
 
-// Middleware
-app.use(morgan('dev')); // Logging
-app.use(cors()); // Enable CORS for all routes
-app.use(bodyParser.json()); // Parse JSON bodies
-app.use(bodyParser.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(morgan('dev'));
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true,
+}));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use((req, res, next) => {
-  if (!req.accepts('application/json')) {
-    return res.status(406).json({
-      error: 'Not Acceptable',
-      message: 'This API only supports application/json'
-    });
-  }
-  res.setHeader('Content-Type', 'application/json');
-  next();
-});
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-// API Routes
+// Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/comments', commentRoutes);
 
-// Root route
+// Root
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to TikTok API' });
 });
 
-// 404 handler
-app.use((req, res, next) => {
+// 404
+app.use((req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
@@ -48,7 +43,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
     error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
   });
 });
 

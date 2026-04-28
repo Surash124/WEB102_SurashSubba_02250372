@@ -1,33 +1,23 @@
 const express = require('express');
 const router = express.Router();
-
+const multer = require('multer');
+const path = require('path');
 const videoController = require('../controllers/videoController');
 
-// GET /api/videos - Get all videos
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
+});
+const upload = multer({ storage });
+
 router.get('/', videoController.getAllVideos);
-
-// POST /api/videos - Create new video
-router.post('/', videoController.createVideo);
-
-// GET /api/videos/:id - Get video by ID
+router.post('/', upload.single('video'), videoController.createVideo);
 router.get('/:id', videoController.getVideoById);
-
-// PUT /api/videos/:id - Update video
 router.put('/:id', videoController.updateVideo);
-
-// DELETE /api/videos/:id - Delete video
 router.delete('/:id', videoController.deleteVideo);
-
-// GET /api/videos/:id/comments - Get video comments
 router.get('/:id/comments', videoController.getVideoComments);
-
-// GET /api/videos/:id/likes - Get video likes
 router.get('/:id/likes', videoController.getVideoLikes);
-
-// POST /api/videos/:id/likes - Like video
 router.post('/:id/likes', videoController.likeVideo);
-
-// DELETE /api/videos/:id/likes - Unlike video
 router.delete('/:id/likes', videoController.unlikeVideo);
 
 module.exports = router;
